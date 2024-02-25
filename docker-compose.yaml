@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  bot:
+    build: yggdrasilsentry
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URI=${DATABASE_URI}
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - PYTHONUNBUFFERED=1
+    restart: always
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASS}
+    ports:
+      - 20999:5432
+    volumes:
+      - ${DATABASE_VOLUME_PATH}:/var/lib/postgresql/data
+  adminer:
+    image: adminer
+    ports:
+      - 20998:8080
+    depends_on:
+      - db

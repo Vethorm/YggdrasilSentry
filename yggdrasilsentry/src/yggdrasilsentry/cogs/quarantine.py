@@ -208,13 +208,15 @@ async def arming_user(
     await upsert_user(receiver)
 
     async with get_session() as session:
+        print("ARMING USER")
         statement = select(GuildUsers).where(
-            GuildUsers.id == giver.id, GuildUsers.guild_id == giver.guild.id
+            GuildUsers.id == receiver.id, GuildUsers.guild_id == giver.guild.id
         )
         result = await session.exec(statement)
         row = result.first()
 
         if row is None:
+            print("adding new user")
             _row = GuildUsers(
                 id=receiver.id,
                 guild_id=receiver.guild.id,
@@ -223,6 +225,7 @@ async def arming_user(
             )
             session.add(_row)
         else:
+            print("updating user")
             row.armed = arm
             row.armed_by = giver.id
             session.add(row)

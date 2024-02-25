@@ -14,7 +14,6 @@ async def upsert_guild(guild: discord.Guild):
             _guild = Guilds(id=guild.id)
             session.add(_guild)
         await session.commit()
-    print("Upserted guild !")
 
 
 async def upsert_user(user: discord.User):
@@ -28,7 +27,6 @@ async def upsert_user(user: discord.User):
             _user = Users(id=user.id)
             session.add(_user)
         await session.commit()
-    print("Upserted user !")
 
 
 async def upsert_message(message: discord.Message):
