@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=58.0.4", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yggdrasilsentry"
+version = "0.0.1"
+dependencies = [
+    "discord.py",
+    "sqlmodel",
+    "psycopg2-binary","asyncpg"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["yggdrasilsentry*"]
+
+[project.scripts]
+sentrybot = "yggdrasilsentry.launcher:main"
