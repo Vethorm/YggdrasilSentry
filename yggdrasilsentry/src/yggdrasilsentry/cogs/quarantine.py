@@ -27,7 +27,7 @@ class QuarantineAdmin(commands.GroupCog, group_name="quarantine_admin"):
         self.bot: Sentry = bot
         print("Loading quarantine cog!")
 
-    @app_commands.command()
+    @app_commands.command(description="Enables quarantine mode")
     async def mode(self, interaction: discord.Interaction, mode: bool):
         await interaction.response.defer(thinking=True)
         guild = interaction.guild
@@ -61,7 +61,7 @@ class QuarantineAdmin(commands.GroupCog, group_name="quarantine_admin"):
             print(e)
             await interaction.followup.send("command failed!")
 
-    @app_commands.command()
+    @app_commands.command(description="Syncs the quarantine role with all channels")
     async def sync_quarantine(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
         try:
@@ -73,29 +73,36 @@ class QuarantineAdmin(commands.GroupCog, group_name="quarantine_admin"):
             print(e)
             await interaction.followup.send("command failed!")
 
-    @app_commands.command()
-    async def arm(self, interaction: discord.Interaction, user: discord.Member):
+    @app_commands.command(
+        description="Arms a user with the specified number of bullets, can also be used to reload a user"
+    )
+    async def arm(
+        self, interaction: discord.Interaction, user: discord.Member, bullets: int
+    ):
         await interaction.response.defer(thinking=True)
         try:
-            await arming_user(interaction.user, user, arm=True)
-            print("Following up")
-            await interaction.followup.send(
-                f"{interaction.user.mention} armed {user.mention}\n"
-                "with great power comes with great responsibility..."
-            )
+            if bullets < 0:
+                interaction.followup.send("You can't provide negative bullets")
+            else:
+                await arming_user(interaction.user, user, arm=True, bullets=bullets)
+                print("Following up")
+                await interaction.followup.send(
+                    f"{interaction.user.mention} armed {user.mention} with {bullets} bullets...\n"
+                    "with great power comes with great responsibility..."
+                )
         except Exception as e:
             print(e)
             print("Errored but following up")
             await interaction.followup.send(f"Failed to arm {user}")
 
-    @app_commands.command()
+    @app_commands.command(description="Disarms a user and takes their bullets")
     async def disarm(self, interaction: discord.Interaction, user: discord.Member):
-        await arming_user(interaction.user, user, arm=False)
+        await arming_user(giver=interaction.user, receiver=user, arm=False)
         await interaction.response.send_message(
             f"{interaction.user.mention} disarmed {user.mention}"
         )
 
-    @app_commands.command()
+    @app_commands.command(description="Lists the activer users in quarantine")
     async def list_active(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
         try:
@@ -114,7 +121,7 @@ class QuarantineAdmin(commands.GroupCog, group_name="quarantine_admin"):
             print(e)
             await interaction.followup.send("command failed")
 
-    @app_commands.command()
+    @app_commands.command(description="Removes a user from quarantine")
     async def remove_quarantine(
         self, interaction: discord.Interaction, user: discord.Member
     ):
@@ -149,14 +156,18 @@ class QuarantineUser(commands.GroupCog, group_name="quarantine"):
     def __init__(self, bot: Sentry):
         self.bot: Sentry = bot
 
-    @app_commands.command()
+    @app_commands.command(
+        description="Shoots a user with a tranqualizer and places them in quarantine"
+    )
     async def shoot(self, interaction: discord.Interaction, user: discord.Member):
         await interaction.response.defer(thinking=True)
         try:
             quarantine_active = await is_quarantine_active(interaction.guild)
             user_armed = await armed(interaction.user)
             misused_shoot = await user_misused_shoot(user)
-            if quarantine_active and user_armed and not misused_shoot:
+            has_bullets = await user_has_bullets(interaction.user)
+            if quarantine_active and user_armed and not misused_shoot and has_bullets:
+                await update_bullets(interaction.user, bullets=-1)
                 await place_user_in_quarantine(interaction.user, user, "manual")
                 await interaction.followup.send(
                     f"{interaction.user.mention} placed {user.mention} in quarantine"
@@ -164,16 +175,23 @@ class QuarantineUser(commands.GroupCog, group_name="quarantine"):
             else:
                 responses = []
                 if misused_shoot and user_armed:
+                    await arming_user(
+                        receiver=interaction.user, giver=interaction.user, arm=False
+                    )
                     responses.append(
                         f"You misused your power, peasentry welcomes you back..."
                     )
-                    await arming_user(interaction.user, user, arm=False)
                 if not user_armed:
                     responses.append(f"{interaction.user.mention} is not armed")
                 if not quarantine_active:
                     responses.append(
                         f"Quarantine not active, your bullets have no power here"
                     )
+                if not has_bullets:
+                    if len(responses) > 0:
+                        responses.append("+ no bullets + ratio + L")
+                    else:
+                        responses.append("You are out of bullets! Ask for a reload!")
                 message = "\n".join(responses)
                 await interaction.followup.send(message)
         except Exception as e:
@@ -200,7 +218,7 @@ async def remove_user_from_quarantine(
 
 
 async def arming_user(
-    giver: discord.Member, receiver: discord.Member, arm: bool = False
+    giver: discord.Member, receiver: discord.Member, arm: bool = False, bullets: int = 0
 ):
     guild = giver.guild
     await upsert_guild(guild)
@@ -208,7 +226,6 @@ async def arming_user(
     await upsert_user(receiver)
 
     async with get_session() as session:
-        print("ARMING USER")
         statement = select(GuildUsers).where(
             GuildUsers.id == receiver.id, GuildUsers.guild_id == giver.guild.id
         )
@@ -216,22 +233,60 @@ async def arming_user(
         row = result.first()
 
         if row is None:
-            print("adding new user")
             _row = GuildUsers(
                 id=receiver.id,
                 guild_id=receiver.guild.id,
                 armed=arm,
+                bullets=bullets,
                 armed_by=giver.id,
             )
             session.add(_row)
         else:
-            print("updating user")
             row.armed = arm
+            if not arm:
+                row.bullets = 0
+            else:
+                row.bullets = bullets
             row.armed_by = giver.id
             session.add(row)
         await session.commit()
 
-    print("Upserted arms !")
+
+async def user_has_bullets(user: discord.Member) -> bool:
+    async with get_session() as session:
+        result = await session.exec(
+            select(GuildUsers).where(
+                GuildUsers.id == user.id, GuildUsers.guild_id == user.guild.id
+            )
+        )
+        row: GuildUsers = result.first()
+        if row is None:
+            return False
+        return row.bullets > 0
+
+
+async def update_bullets(
+    receiver: discord.Member, giver: discord.Member = None, bullets: int = 0
+) -> int:
+    async with get_session() as session:
+        result = await session.exec(
+            select(GuildUsers).where(
+                GuildUsers.id == receiver.id,
+                GuildUsers.guild_id == receiver.guild.id,
+            )
+        )
+        row: GuildUsers = result.first()
+        if row is not None:
+            if giver is not None:
+                row.armed_by = giver.id
+            if bullets < 0:
+                print(f"bullets before {row.bullets}")
+                row.bullets += bullets
+                print(f"bullets after {row.bullets}")
+            else:
+                row.bullets = bullets
+            session.add(row)
+        await session.commit()
 
 
 async def get_active_quarantine_list(guild: discord.Guild) -> list[discord.Member]:
@@ -290,6 +345,10 @@ async def deny_quarantine_role(guild: discord.Guild, role: discord.Role):
         if isinstance(channel, discord.TextChannel):
             await channel.set_permissions(
                 target=role, read_messages=False, send_messages=False
+            )
+        if isinstance(channel, discord.VoiceChannel):
+            await channel.set_permissions(
+                target=role, view_channel=False, connect=False
             )
 
 

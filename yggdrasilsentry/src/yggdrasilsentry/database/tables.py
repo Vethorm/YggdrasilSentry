@@ -35,6 +35,7 @@ class GuildUsers(SQLModel, table=True):
         ),
     )
     armed: bool = Field(default=False)
+    bullets: int = Field(default=0)
     armed_by: int = Field(
         default=None,
         sa_column=Column(
