@@ -8,7 +8,10 @@ from yggdrasilsentry.database.tables import create_db_and_tables, get_session
 class Sentry(commands.Bot):
     def __init__(self):
         intents = discord.Intents(
-            messages=True, message_content=True, guilds=True, members=True
+            messages=True,
+            message_content=True,
+            guilds=True,
+            members=True,
         )
         command_prefix = "sentry:"
         super().__init__(command_prefix=command_prefix, intents=intents)
@@ -49,9 +52,6 @@ class Sentry(commands.Bot):
                 print("In %s:", ctx.command.qualified_name, exc_info=original)
         elif isinstance(error, commands.ArgumentParsingError):
             await ctx.send(str(error))
-
-    async def on_message(self, message):
-        print(f"Message from {message.author}: {message.content}")
 
     async def start(self) -> None:
         await super().start(os.environ["DISCORD_TOKEN"], reconnect=True)

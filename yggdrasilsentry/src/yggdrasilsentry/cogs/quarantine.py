@@ -85,14 +85,12 @@ class QuarantineAdmin(commands.GroupCog, group_name="quarantine_admin"):
                 interaction.followup.send("You can't provide negative bullets")
             else:
                 await arming_user(interaction.user, user, arm=True, bullets=bullets)
-                print("Following up")
                 await interaction.followup.send(
                     f"{interaction.user.mention} armed {user.mention} with {bullets} bullets...\n"
                     "with great power comes with great responsibility..."
                 )
         except Exception as e:
             print(e)
-            print("Errored but following up")
             await interaction.followup.send(f"Failed to arm {user}")
 
     @app_commands.command(description="Disarms a user and takes their bullets")
@@ -142,10 +140,8 @@ class QuarantineListeners(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        print("member listener")
         is_quarantined = await user_is_quarantined(member)
         quarantine_active = await is_quarantine_active(member.guild)
-        print(is_quarantined, quarantine_active)
         if is_quarantined and quarantine_active:
             quarantine_role = await get_current_quarantine_role(member.guild)
             await member.add_roles(quarantine_role)
@@ -155,6 +151,16 @@ class QuarantineListeners(commands.Cog):
 class QuarantineUser(commands.GroupCog, group_name="quarantine"):
     def __init__(self, bot: Sentry):
         self.bot: Sentry = bot
+
+    # @app_commands.command()
+    # async def clean_user(self, interaction: discord.Interaction, user: discord.Member):
+    #     await interaction.response.defer(thinking=True)
+    #     try:
+    #         await delete_user_message_range(user, 50)
+    #         await interaction.followup.send("Removed messages")
+    #     except Exception as e:
+    #         print(e)
+    #         await interaction.followup.send("command failed")
 
     @app_commands.command(
         description="Shoots a user with a tranqualizer and places them in quarantine"
@@ -169,6 +175,7 @@ class QuarantineUser(commands.GroupCog, group_name="quarantine"):
             if quarantine_active and user_armed and not misused_shoot and has_bullets:
                 await update_bullets(interaction.user, bullets=-1)
                 await place_user_in_quarantine(interaction.user, user, "manual")
+                await delete_user_message_range(user, 50)
                 await interaction.followup.send(
                     f"{interaction.user.mention} placed {user.mention} in quarantine"
                 )
@@ -197,6 +204,19 @@ class QuarantineUser(commands.GroupCog, group_name="quarantine"):
         except Exception as e:
             print(traceback.format_exc())
             await interaction.followup.send(f"command failed")
+
+
+async def delete_user_message_range(user: discord.Member, amount: int):
+    guild = user.guild
+    for channel in await guild.fetch_channels():
+        channel: discord.abc.GuildChannel
+        if isinstance(channel, discord.TextChannel):
+            async for message in channel.history(limit=50, oldest_first=False):
+                try:
+                    if message.author.id == user.id:
+                        await message.delete()
+                except Exception as e:
+                    pass
 
 
 async def remove_user_from_quarantine(
@@ -280,9 +300,7 @@ async def update_bullets(
             if giver is not None:
                 row.armed_by = giver.id
             if bullets < 0:
-                print(f"bullets before {row.bullets}")
                 row.bullets += bullets
-                print(f"bullets after {row.bullets}")
             else:
                 row.bullets = bullets
             session.add(row)
